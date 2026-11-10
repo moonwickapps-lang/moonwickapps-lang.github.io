@@ -1,7 +1,8 @@
-/* Prompt Academy v2 — "Catch the Prompt". A Moonwick Apps game for YouTube Playables.
+/* Prompt Academy v3 — "Picture This". A Moonwick Apps game for YouTube Playables.
  * Screens, save data, audio and the ONE pausable clock live here.
- *  - LEARN: the v1 card lessons (levels.js) teach each prompting principle.
- *  - ARCADE: arcade.js (window.Arcade) — catch the right prompt blocks.
+ *  - LEARN: the card lessons (levels.js) teach each prompting principle.
+ *  - PICTURE: picture.js (window.PicturePlay) — describe a picture with word chips,
+ *    Wick paints it (scene.js), and you see how your words shifted the result.
  * Plain DOM + Canvas, no engine, no external calls (only the Playables SDK).
  */
 'use strict';
@@ -10,107 +11,131 @@
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const LEVELS = window.LEVELS;
   const META = window.SLOT_META;
-  const STAGES = window.ARCADE_STAGES || [];
-  const SAVE_KEY = 'moonwick.promptAcademy.v1'; // same key as v1 so web saves migrate
+  const PIC = window.PICTURE;
+  const SAVE_KEY = 'moonwick.promptAcademy.v1'; // same key as v1/v2 so web saves migrate
   const DEBUG = /[?&]debug=1\b/.test(location.search);
+  const SDK_TIMEOUT_MS = 3000;                  // boot never waits longer than this on the SDK
 
   /* ───────────── Playables SDK wrapper ─────────────
    * In YouTube we use ONLY the SDK for saves. Outside YouTube (e.g. a demo on
    * our own website) we fall back to localStorage so the web build still works.
+   * Every call is guarded: a missing or misbehaving SDK must never block the game.
    */
   const yt = window.ytgame;
   const IN_YT = !!(yt && yt.IN_PLAYABLES_ENV);
   const SDK = {
     firstFrameReady() { try { yt && yt.game.firstFrameReady(); } catch (e) {} },
     gameReady() { try { yt && yt.game.gameReady(); } catch (e) {} },
-    async load() {
+    load() {
       if (IN_YT) return yt.game.loadData();
-      try { return localStorage.getItem(SAVE_KEY) || ''; } catch (e) { return ''; }
+      try { return Promise.resolve(localStorage.getItem(SAVE_KEY) || ''); } catch (e) { return Promise.resolve(''); }
     },
-    async save(str) {
+    save(str) {
       if (IN_YT) return yt.game.saveData(str);
       try { localStorage.setItem(SAVE_KEY, str); } catch (e) {}
+      return Promise.resolve();
     },
     score(value) {
       if (!IN_YT) return;
       try { yt.engagement.sendScore({ value }).catch(() => {}); } catch (e) {}
     },
-    audioEnabled() { try { return yt ? yt.system.isAudioEnabled() : true; } catch (e) { return true; } },
+    audioEnabled() { try { return yt ? yt.system.isAudioEnabled() !== false : true; } catch (e) { return true; } },
     onAudioChange(cb) { try { yt && yt.system.onAudioEnabledChange(cb); } catch (e) {} },
     onPause(cb) { try { yt && yt.system.onPause(cb); } catch (e) {} },
     onResume(cb) { try { yt && yt.system.onResume(cb); } catch (e) {} },
     logError(err) { try { yt && yt.health.logError(err); } catch (e) {} },
   };
+  /** Resolves with the promise's value, or `fallback` after `ms` (never hangs). */
+  function withTimeout(promise, ms, fallback) {
+    return new Promise(resolve => {
+      const t = setTimeout(() => resolve(fallback), ms);
+      Promise.resolve(promise).then(v => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback); });
+    });
+  }
 
-  /* ───────────── Save state (v2) ─────────────
-   * { v:2, learned:{lessonId:true}, stars:{stageId:1..3}, best:{stageId:score}, endless:score }
-   * v1 saves ({ v:1, stars:{lessonId:n} }) migrate to `learned`.
+  /* ───────────── Save state (v3) ─────────────
+   * { v:3, learned:{lessonId:true}, stars:{levelId:1..3}, best:{levelId:0..100}, free:points }
+   * v1 ({stars:{lessonId}}) and v2 ({learned, arcade stars}) keep `learned`; arcade progress is dropped.
    */
-  const state = { learned: {}, stars: {}, best: {}, endless: 0 };
-  let canSave = false;
+  const state = { learned: {}, stars: {}, best: {}, free: 0 };
+  let canSave = false;      // true only once loadData has answered (Playables: load before save)
   let lastScoreSent = -1;
+  const TIMED_OUT = {};
 
-  const MAX_SCORE = 10000000;
-  const cleanScore = v => { const n = Math.floor(Number(v)); return n > 0 && n < MAX_SCORE ? n : 0; };
+  const MAX_FREE = PIC.FREE.rounds * 100;
+  const levelIds = new Set(LEVELS.map(l => l.id));
 
-  async function loadSave() {
-    let raw = '';
-    try { raw = await SDK.load(); canSave = true; }
-    catch (e) { canSave = !IN_YT; SDK.logError(e); }
+  function applySave(raw) {
     if (!raw) return;
     try {
       const d = JSON.parse(raw);
       if (!d || typeof d !== 'object') return;
-      const lessonIds = new Set(LEVELS.map(l => l.id));
-      const stageIds = new Set(STAGES.map(s => s.id));
-      if (d.v === 2) {
-        if (d.learned && typeof d.learned === 'object') {
-          for (const k of Object.keys(d.learned)) if (lessonIds.has(k) && d.learned[k]) state.learned[k] = true;
-        }
+      if (d.learned && typeof d.learned === 'object') {
+        for (const k of Object.keys(d.learned)) if (levelIds.has(k) && d.learned[k]) state.learned[k] = true;
+      }
+      if (d.v === 3) {
         if (d.stars && typeof d.stars === 'object') {
           for (const [k, v] of Object.entries(d.stars)) {
             const n = Math.round(Number(v));
-            if (stageIds.has(k) && n >= 1 && n <= 3) state.stars[k] = n;
+            if (levelIds.has(k) && n >= 1 && n <= 3) state.stars[k] = Math.max(state.stars[k] || 0, n);
           }
         }
         if (d.best && typeof d.best === 'object') {
-          for (const [k, v] of Object.entries(d.best)) if (stageIds.has(k) && cleanScore(v)) state.best[k] = cleanScore(v);
+          for (const [k, v] of Object.entries(d.best)) {
+            const n = Math.round(Number(v));
+            if (levelIds.has(k) && n > 0 && n <= 100) state.best[k] = Math.max(state.best[k] || 0, n);
+          }
         }
-        state.endless = cleanScore(d.endless);
-      } else if (d.stars && typeof d.stars === 'object') {
-        // v1: lesson stars -> those lessons are learned (arcade stages still to play)
-        for (const [k, v] of Object.entries(d.stars)) if (lessonIds.has(k) && Number(v) >= 1) state.learned[k] = true;
+        const f = Math.round(Number(d.free));
+        if (f > 0 && f <= MAX_FREE) state.free = Math.max(state.free, f);
+      } else if (!d.v && d.stars && typeof d.stars === 'object') {
+        // v1: lesson stars -> those lessons are learned
+        for (const [k, v] of Object.entries(d.stars)) if (levelIds.has(k) && Number(v) >= 1) state.learned[k] = true;
       }
     } catch (e) { /* unreadable save: start fresh, never crash */ }
+  }
+
+  async function loadSave() {
+    let raw, pending;
+    try { pending = Promise.resolve(SDK.load()); raw = await withTimeout(pending, SDK_TIMEOUT_MS, TIMED_OUT); }
+    catch (e) { raw = ''; SDK.logError(e); }
+    if (raw === TIMED_OUT) {
+      // The SDK is slow: start playing now, but do not save until the cloud save arrives
+      // (otherwise we could overwrite it). When that same request lands, merge it in and allow saving.
+      pending.then(late => {
+        applySave(late); canSave = true; persist(); refreshScreen();
+      }, e => SDK.logError(e));
+      return;
+    }
+    canSave = true;
+    applySave(raw);
     lastScoreSent = totalScore();
   }
   function persist() {
     if (!canSave) return;
-    const data = { v: 2, learned: state.learned, stars: state.stars, best: state.best, endless: state.endless };
-    Promise.resolve(SDK.save(JSON.stringify(data))).catch(e => SDK.logError(e));
+    const data = { v: 3, learned: state.learned, stars: state.stars, best: state.best, free: state.free };
+    try { Promise.resolve(SDK.save(JSON.stringify(data))).catch(e => SDK.logError(e)); } catch (e) { SDK.logError(e); }
   }
-  /** The YouTube score: endless best + sum of best stage scores (always derivable from the save). */
+  /** The YouTube score: best match % of every picture level + best Free-play run. */
   function totalScore() {
-    return Math.floor(state.endless + Object.values(state.best).reduce((a, b) => a + b, 0));
+    return Object.values(state.best).reduce((a, b) => a + b, 0) + state.free;
   }
   function reportScore() {
     const s = totalScore();
     if (s > lastScoreSent) { lastScoreSent = s; SDK.score(s); }
   }
 
-  const stageFor = i => STAGES.find(s => s.id === LEVELS[i].id) || null;
   const totalStars = () => Object.values(state.stars).reduce((a, b) => a + b, 0);
   const isUnlocked = i => i === 0 || !!state.stars[LEVELS[i - 1].id];
-  const endlessUnlocked = () => !!state.stars[LEVELS[LEVELS.length - 1].id];
+  const freeUnlocked = () => !!state.stars[LEVELS[LEVELS.length - 1].id];
 
   /* ───────────── The one pausable clock (rAF) ─────────────
-   * Drives lesson timers, the answer typer, the arcade and the music.
+   * Drives lesson timers, the answer typer and Wick's painting animation.
    * On YouTube onPause it stops completely: no rAF, no timers, audio suspended.
    */
   let paused = false, last = 0, gameTime = 0, rafOn = false;
   let timers = [];
   let typer = null;
-  let arcadeOn = false;
   let rafCount = 0; // debug only: frames run by the clock
   function after(ms, fn) { timers.push({ t: gameTime + ms, fn }); }
   function loop(now) {
@@ -121,24 +146,26 @@
     const due = timers.filter(t => t.t <= gameTime);
     if (due.length) { timers = timers.filter(t => t.t > gameTime); due.forEach(t => t.fn()); }
     if (typer) stepTyper(dt);
-    if (arcadeOn) window.Arcade.tick(dt);
-    musicTick();
+    window.PicturePlay.tick(dt);
     requestAnimationFrame(loop);
   }
   function startLoop() { if (!rafOn && !paused) { rafOn = true; requestAnimationFrame(loop); } }
 
+  /* Pause never hides the game: a small overlay sits on top of whatever screen is showing.
+   * Outside YouTube the platform may never send onResume, so the overlay offers "tap to continue". */
   function pause() {
     if (paused) return;
     paused = true;
     persist(); // Playables SHOULD: save on pause (progress is also saved at every milestone)
     document.body.classList.add('paused');
-    window.Arcade.pause();
+    $('#pause-overlay').hidden = false;
     if (actx) actx.suspend().catch(() => {});
   }
   function resume() {
+    if (!paused) return;
     paused = false;
     document.body.classList.remove('paused');
-    window.Arcade.resume();
+    $('#pause-overlay').hidden = true;
     if (actx && audioOn) actx.resume().catch(() => {});
     startLoop();
   }
@@ -150,14 +177,12 @@
     if (actx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    actx = new AC();
+    try { actx = new AC(); } catch (e) { return; }
     if (!audioOn || paused) actx.suspend().catch(() => {});
   }
   function tone(freq, dur, type = 'sine', vol = 0.08, delay = 0) {
     if (!actx || !audioOn || paused) return;
-    toneAt(freq, dur, type, vol, actx.currentTime + delay);
-  }
-  function toneAt(freq, dur, type, vol, t) {
+    const t = actx.currentTime + delay;
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = type; o.frequency.value = freq;
     g.gain.setValueAtTime(0.0001, t);
@@ -169,53 +194,11 @@
   const sfx = {
     tap() { tone(660, 0.06, 'triangle', 0.05); },
     pick() { tone(523, 0.07, 'triangle', 0.06); tone(784, 0.09, 'triangle', 0.06, 0.05); },
-    send() { tone(392, 0.08, 'sine', 0.07); tone(587, 0.12, 'sine', 0.07, 0.07); },
+    send() { [392, 494, 587, 698, 784].forEach((f, i) => tone(f, 0.12, 'sine', 0.05, i * 0.18)); }, // brush strokes
     tick() { tone(1400, 0.015, 'square', 0.01); },
     win() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.22, 'triangle', 0.08, i * 0.1)); },
     fail() { tone(311, 0.16, 'sawtooth', 0.035); tone(233, 0.28, 'sawtooth', 0.035, 0.13); },
   };
-  // Arcade sounds: each prompt-block type has its own note so a full prompt "plays a chord".
-  const TYPE_NOTE = { role: 392, task: 440, context: 494, format: 523, constraints: 587, example: 659, steps: 698 };
-  function arcadeSound(name, d) {
-    d = d || {};
-    switch (name) {
-      case 'catch': { // pitch rises one semitone per combo tier
-        const f = (TYPE_NOTE[d.type] || 523) * Math.pow(2, ((d.mult || 1) - 1) / 12);
-        tone(f, 0.09, 'triangle', 0.07); tone(f * 1.5, 0.14, 'triangle', 0.05, 0.06); break;
-      }
-      case 'bonus': tone(880, 0.07, 'triangle', 0.05); tone(1175, 0.09, 'triangle', 0.04, 0.05); break;
-      case 'combo': [659, 831, 988, 1319].slice(0, (d.mult || 2) + 1).forEach((f, i) => tone(f, 0.1, 'triangle', 0.05, i * 0.05)); break;
-      case 'wrong': tone(247, 0.1, 'square', 0.025); tone(220, 0.16, 'square', 0.025, 0.08); break;
-      case 'junk': tone(150, 0.25, 'sawtooth', 0.05); tone(95, 0.32, 'sawtooth', 0.045, 0.06); break; // "pfft"
-      case 'fizz': tone(330, 0.18, 'sine', 0.03); tone(262, 0.22, 'sine', 0.025, 0.08); break;
-      case 'pop': tone(1568, 0.05, 'sine', 0.03); break;
-      case 'wave': [523, 659, 784, 1046, 1319, 1568].forEach((f, i) => tone(f, 0.16, 'triangle', 0.05, i * 0.06)); break;
-      case 'power': [523, 659, 784, 1046, 1319].forEach((f, i) => tone(f, 0.12, 'sine', 0.05, i * 0.04)); break;
-      case 'send': sfx.send(); [784, 988, 1175].forEach((f, i) => tone(f, 0.2, 'sine', 0.04, 0.15 + i * 0.06)); break;
-      case 'request': tone(587, 0.06, 'sine', 0.04); tone(784, 0.08, 'sine', 0.04, 0.06); break;
-      case 'tick': sfx.tick(); break;
-      case 'clear': sfx.win(); break;
-      case 'fail': case 'over': sfx.fail(); break;
-    }
-  }
-
-  /* Soft procedural music for the arcade: a slow pentatonic arpeggio + bass.
-   * Scheduled a little ahead from the clock, so it stops with pause and mute. */
-  const music = { on: false, next: 0, step: 0 };
-  const SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 784.0, 880.0];
-  const ROOTS = [0, 4, 2, 3];
-  const ARP = [0, 2, 4, 2, 5, 4, 2, 4];
-  function musicTick() {
-    if (!music.on || !actx || !audioOn || paused || actx.state !== 'running') return;
-    const now = actx.currentTime;
-    if (music.next < now) music.next = now + 0.05;
-    while (music.next < now + 0.3) {
-      const i = music.step++, root = ROOTS[Math.floor(i / 8) % ROOTS.length];
-      toneAt(SCALE[(root + ARP[i % 8]) % SCALE.length], 0.32, 'triangle', 0.018, music.next);
-      if (i % 8 === 0) toneAt(SCALE[root] / 2, 1.7, 'sine', 0.03, music.next);
-      music.next += 0.24;
-    }
-  }
 
   /* ───────────── Wick the candle (DOM screens) ───────────── */
   const WICK_SVG = `
@@ -256,7 +239,6 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
   const starsHTML = n => [0, 1, 2].map(i => `<span class="${i < n ? '' : 'off'}">★</span>`).join('');
-  const fmt = n => Math.floor(n).toLocaleString('en-US');
 
   function makeSky() {
     const sky = $('#sky'); let html = '';
@@ -268,40 +250,44 @@
   }
 
   /* ───────────── Screens ───────────── */
+  let screen = 'loading';
   function show(name) {
-    if (name !== 'arcade' && arcadeOn) stopArcade();
+    if (name !== 'picture') window.PicturePlay.stop();
+    screen = name;
     $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
-    document.body.classList.toggle('in-arcade', name === 'arcade');
-    if (name === 'map') renderMap();
-    if (name === 'notebook') renderNotebook();
-    if (name === 'title') renderTitle();
+    refreshScreen();
+  }
+  function refreshScreen() {
+    if (screen === 'map') renderMap();
+    if (screen === 'notebook') renderNotebook();
+    if (screen === 'title') renderTitle();
   }
 
   function renderTitle() {
-    const b = $('#btn-title-endless');
-    if (b) b.hidden = !endlessUnlocked();
+    const b = $('#btn-title-free');
+    if (b) b.hidden = !freeUnlocked();
   }
 
   function renderMap() {
     $('#total-stars').textContent = '★ ' + totalStars() + '/' + LEVELS.length * 3;
     const current = LEVELS.findIndex((l, i) => isUnlocked(i) && !state.stars[l.id]);
     $('#map-path').innerHTML = LEVELS.map((l, i) => {
-      const st = stageFor(i);
+      const pic = PIC.LEVELS[i];
       const unlocked = isUnlocked(i), stars = state.stars[l.id] || 0;
       const cls = ['map-node', unlocked ? '' : 'locked', stars ? 'done' : '', i === current ? 'current' : ''].join(' ').trim();
       const label = `Stage ${i + 1}: ${l.title}` + (unlocked ? `, ${stars} of 3 stars` : ', locked');
       return `<button class="${cls}" data-node="${i}" aria-label="${esc(label)}" ${unlocked ? '' : 'aria-disabled="true"'}>
         <span class="node-num">${i + 1}</span>
-        <span class="node-title">${esc(l.title)}${st ? `<small>${esc(st.title)}</small>` : ''}</span>
+        <span class="node-title">${esc(l.title)}<small>${esc(pic.short)}${state.best[l.id] ? ' · ' + state.best[l.id] + '%' : ''}</small></span>
         <span class="node-stars">${unlocked ? starsHTML(stars) : '🔒'}</span>
         ${unlocked && state.learned[l.id] ? `<span class="node-replay" data-replay="${i}" role="button" aria-label="Replay lesson ${i + 1}">Replay lesson</span>` : ''}
       </button>`;
     }).join('');
-    const e = $('#btn-endless');
-    const open = endlessUnlocked();
+    const e = $('#btn-free');
+    const open = freeUnlocked();
     e.classList.toggle('locked', !open);
     e.setAttribute('aria-disabled', open ? 'false' : 'true');
-    $('#endless-sub').textContent = open ? (state.endless ? 'Best ' + fmt(state.endless) : 'How long can you glow?') : 'Clear stage 8 to unlock';
+    $('#free-sub').textContent = open ? (state.free ? `Best ${state.free} pts` : 'A new picture every round') : 'Clear stage 8 to unlock';
     const cur = $('#map-path .map-node.current');
     if (cur) cur.scrollIntoView({ block: 'center' });
   }
@@ -312,17 +298,19 @@
       : `<li class="locked">Learn lesson ${i + 1} to unlock this rule.</li>`).join('');
   }
 
-  /* Tap a map node: first time -> lesson, then arcade. Later -> arcade directly. */
+  /* Tap a map node: first time -> card lesson, then the picture level. Later -> picture directly. */
   function openNode(i) {
     if (i < 0 || i >= LEVELS.length || !isUnlocked(i)) return;
-    if (!state.learned[LEVELS[i].id] || !stageFor(i)) startLevel(i);
-    else startArcade(i);
+    if (!state.learned[LEVELS[i].id]) startLesson(i);
+    else startPicture(i);
   }
+  function startPicture(i) { closeModal(); closeSheet(); ensureAudio(); window.PicturePlay.startLevel(i); }
+  function startFree() { closeModal(); closeSheet(); ensureAudio(); window.PicturePlay.startFree(); }
 
-  /* ───────────── LEARN: v1 card lessons ───────────── */
+  /* ───────────── LEARN: card lessons ───────────── */
   let cur = null; // { lvl, idx, picks, tries, order, flagged }
 
-  function startLevel(idx) {
+  function startLesson(idx) {
     const lvl = LEVELS[idx];
     const prevKeys = idx > 0 ? new Set(LEVELS[idx - 1].slots.map(s => s.key)) : new Set();
     cur = { lvl, idx, picks: {}, tries: 0, order: {}, flagged: null, prevKeys };
@@ -405,7 +393,7 @@
     cur.tries++;
     const bad = lvl.slots.filter(s => !picks[s.key].ok);
     const result = bad.length ? { ok: false, slot: bad[0].key, card: picks[bad[0].key], more: bad.length - 1 } : { ok: true };
-    sfx.send();
+    sfx.tap();
 
     openModal(`
       <div class="kicker">Wick’s answer · try ${cur.tries}</div>
@@ -444,15 +432,14 @@
       setMood(wick, 'happy');
       sfx.win();
       if (!state.learned[lvl.id]) { state.learned[lvl.id] = true; persist(); }
-      const hasStage = !!stageFor(cur.idx);
       v.innerHTML = `
         <div class="verdict ok">
           <h4>Perfect prompt! ${who} got exactly what they needed.</h4>
-          ${hasStage ? '<p class="more">Now use it under pressure: catch the right prompt blocks as they fall!</p>' : ''}
+          <p class="more">Now see it in pictures: describe a scene and watch how your words change what Wick paints.</p>
         </div>
         <p class="tipcard"><b>📓 New notebook rule:</b> ${esc(lvl.tip)}</p>
         <div class="modal-actions">
-          ${hasStage ? `<button class="btn primary" data-act="catch">Now catch it! ›</button>` : ''}
+          <button class="btn primary" data-act="picture">Now picture it! ›</button>
           <button class="btn ghost" data-act="map">Map</button>
         </div>`;
     } else {
@@ -473,99 +460,32 @@
     $('#ans-verdict').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  /* ───────────── ARCADE ───────────── */
-  let arc = null; // { idx, endless, stage }
-
-  function startArcade(idx, firstTime) {
-    const endless = idx === 'endless';
-    const stage = endless ? { id: 'endless', title: 'Endless', types: [], requests: [] } : stageFor(idx);
-    if (!stage) return;
-    arc = { idx, endless, stage };
-    closeModal(); closeSheet();
-    show('arcade');
-    ensureAudio();
-    window.Arcade.start({
-      canvas: $('#arcade-canvas'), stage, endless, firstTime: !!firstTime,
-      sfx: arcadeSound, onExit: onArcadeEnd, onEvent: () => {},
-    });
-    arcadeOn = true;
-    music.on = true; music.next = 0;
+  /* ───────────── PICTURE results (called by picture.js) ───────────── */
+  function onLevelResult(i, pct, stars) {
+    const id = LEVELS[i].id;
+    let changed = false;
+    if (pct > (state.best[id] || 0)) { state.best[id] = pct; changed = true; }
+    if (stars > (state.stars[id] || 0)) { state.stars[id] = stars; changed = true; }
+    if (changed) { persist(); reportScore(); }
   }
-
-  function stopArcade() {
-    arcadeOn = false;
-    music.on = false;
-    return window.Arcade.stop();
-  }
-
-  /** Records a finished run in the save (GDD: best = max score cleared or not; only clears earn stars).
-   *  Returns { newBest, best }. */
-  function recordRun(score, cleared, stars) {
-    let newBest = false, best;
-    score = Math.max(0, Math.floor(score));
-    if (arc.endless) {
-      if (score > state.endless) { state.endless = score; newBest = true; }
-      best = state.endless;
-    } else {
-      const id = arc.stage.id;
-      if (cleared && stars > (state.stars[id] || 0)) state.stars[id] = stars;
-      if (score > (state.best[id] || 0)) { state.best[id] = score; newBest = true; }
-      best = state.best[id] || 0;
-    }
-    persist();
-    reportScore();
-    return { newBest, best };
-  }
-
-  function onArcadeEnd(result) {
-    stopArcade();
-    const { newBest, best } = recordRun(result.score, result.cleared, result.stars);
-    showStageResult(result, best, newBest);
-  }
-
-  function showStageResult(r, best, newBest) {
-    const i = arc.idx, endless = arc.endless;
-    const st = arc.stage;
-    const lastStage = !endless && i === LEVELS.length - 1;
-    let head, body = '', actions = '';
-    if (endless) {
-      head = `<div class="kicker">Endless mode</div><h3>Game over</h3>`;
-      body = r.failReason ? `<p class="tipcard"><b>Remember:</b> ${esc(r.failReason)}</p>` : '';
-      actions = `<button class="btn primary" data-act="retry">Play again</button>`;
-    } else if (r.cleared) {
-      head = `<div class="kicker">Stage ${i + 1} · ${esc(st.title)}</div>
-        <div class="big-stars" aria-label="${r.stars} of 3 stars">${starsHTML(r.stars)}</div>
-        <h3>${lastStage ? 'You beat the Academy!' : 'Stage clear!'}</h3>`;
-      if (r.stars < 3) {
-        body = `<p class="tipcard"><b>For ★★★:</b> keep all 3 flames and score ${fmt(st.target || 0)}+.</p>`;
-      }
-      if (lastStage) body += `<p class="tipcard"><b>Endless mode unlocked!</b> Random requests, rising speed. How long can you glow?</p>`;
-      actions = lastStage ? `<button class="btn primary" data-act="endless">Play Endless ›</button>`
-        : `<button class="btn primary" data-act="next-stage">Next: ${esc(LEVELS[i + 1].title)} ›</button>`;
-      actions += `<button class="btn ghost" data-act="retry">Retry</button>`;
-    } else {
-      head = `<div class="kicker">Stage ${i + 1} · ${esc(st.title)}</div>
-        <div class="big-stars" aria-label="0 of 3 stars">${starsHTML(0)}</div>
-        <h3>Out of flames!</h3>`;
-      body = `<p class="tipcard"><b>What went wrong:</b> ${esc(r.failReason)}</p>
-        <p class="tipcard"><b>📓 Rule:</b> ${esc(LEVELS[i].tip)}</p>`;
-      actions = `<button class="btn primary" data-act="retry">Retry</button>
-        <button class="btn ghost" data-act="replay-lesson">Replay lesson</button>`;
-    }
+  function onFreeResult(points) {
+    const newBest = points > state.free;
+    if (newBest) { state.free = points; persist(); reportScore(); }
     openModal(`
       <div class="stage-result">
-        ${head}
-        <p class="score-line">Score <b>${fmt(r.score)}</b> · Best <b>${fmt(best)}</b>${newBest && r.score > 0 ? ' <span class="new-best">New best!</span>' : ''}</p>
-        ${body}
-        <div class="modal-actions">${actions}<button class="btn ghost" data-act="map">Map</button></div>
+        <div class="kicker">Free play</div>
+        <h3>${points >= 400 ? 'Prompt pro!' : points >= 250 ? 'Nice describing!' : 'Keep practising!'}</h3>
+        <p class="score-line">Score <b>${points}</b> · Best <b>${state.free}</b>${newBest ? ' <span class="new-best">New best!</span>' : ''}</p>
+        <p class="tipcard"><b>Remember:</b> anything you don’t say, the AI has to guess.</p>
+        <div class="modal-actions">
+          <button class="btn primary" data-act="free">Play again</button>
+          <button class="btn ghost" data-act="map">Map</button>
+        </div>
       </div>`);
   }
-
-  /** Exit button on the arcade screen: leave the run. Endless scores still count. */
-  function exitArcade() {
-    const snap = stopArcade();
-    if (snap && arc && arc.endless && snap.score > 0) recordRun(snap.score, false, 0);
-    show('map');
+  function nextLevel(i) {
+    if (i >= LEVELS.length - 1) return startFree();
+    openNode(i + 1);
   }
 
   /* ───────────── Input ───────────── */
@@ -573,20 +493,20 @@
   document.addEventListener('keydown', ensureAudio, { capture: true, once: true });
 
   document.addEventListener('click', e => {
+    if (e.target.closest('#pause-overlay')) { if (!IN_YT) resume(); return; }
     if (paused) return;
     const replay = e.target.closest('[data-replay]');
-    if (replay) { sfx.tap(); return startLevel(Number(replay.dataset.replay)); }
+    if (replay) { sfx.tap(); return startLesson(Number(replay.dataset.replay)); }
     const t = e.target.closest('button, [data-close-sheet]');
     if (!t) return;
 
     if (t.id === 'btn-play') { sfx.tap(); return show('map'); }
     if (t.id === 'btn-notebook') { sfx.tap(); return show('notebook'); }
-    if (t.id === 'btn-endless' || t.id === 'btn-title-endless') {
-      if (endlessUnlocked()) { sfx.tap(); startArcade('endless'); }
+    if (t.id === 'btn-free' || t.id === 'btn-title-free') {
+      if (freeUnlocked()) { sfx.tap(); startFree(); }
       return;
     }
-    if (t.id === 'arcade-exit') { sfx.tap(); return exitArcade(); }
-    if (t.dataset.back) { sfx.tap(); return show(t.dataset.back); }
+    if (t.dataset.back) { sfx.tap(); closeModal(); return show(t.dataset.back); }
     if (t.dataset.node !== undefined) {
       const i = Number(t.dataset.node);
       if (isUnlocked(i)) { sfx.tap(); openNode(i); }
@@ -611,16 +531,12 @@
       const f = $('#slots .slot.flag'); if (f) f.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    if (act === 'catch') return startArcade(cur.idx, !state.stars[LEVELS[cur.idx].id]);
-    if (act === 'retry') return startArcade(arc.endless ? 'endless' : arc.idx);
-    if (act === 'next-stage') { closeModal(); return openNode(arc.idx + 1); }
-    if (act === 'endless') return startArcade('endless');
-    if (act === 'replay-lesson') { closeModal(); return startLevel(arc.idx); }
+    if (act === 'picture') return startPicture(cur.idx);
+    if (act === 'free') return startFree();
     if (act === 'map') { closeModal(); return show('map'); }
-    if (act === 'notebook') { closeModal(); return show('notebook'); }
   });
 
-  // Esc closes the card sheet / dialogs (Playables design SHOULD). Never preventDefault on Esc.
+  // Esc closes the card sheet / dialogs / result view (Playables design SHOULD). Never preventDefault on Esc.
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || paused) return;
     if (sheetSlot) return closeSheet();
@@ -629,10 +545,13 @@
       if (b) b.click();
       return;
     }
-    if (arcadeOn) { sfx.tap(); exitArcade(); }
+    if (screen === 'picture' && window.PicturePlay.escape()) sfx.tap();
   });
 
-  /* ───────────── Boot ───────────── */
+  /* ───────────── Boot ─────────────
+   * Robust against any SDK behaviour: screens never depend on an animation to become
+   * visible, a pause shows an overlay (it never hides the UI), and loadData has a timeout.
+   */
   SDK.onPause(pause);
   SDK.onResume(resume);
   SDK.onAudioChange(on => {
@@ -642,25 +561,39 @@
 
   window.addEventListener('error', e => SDK.logError(e.error || e.message));
 
+  window.PicturePlay.init({
+    show, sfx, openModal, closeModal, mountWick, setMood,
+    isPaused: () => paused, onLevelResult, onFreeResult, nextLevel,
+  });
+
   // Test hooks (only with ?debug=1): the same pause/resume the SDK calls, plus read-only state.
   if (DEBUG) {
     window.PADebug = {
       pause, resume,
       get rafCount() { return rafCount; },
       get paused() { return paused; },
-      get save() { return JSON.parse(JSON.stringify({ v: 2, learned: state.learned, stars: state.stars, best: state.best, endless: state.endless })); },
+      get save() { return JSON.parse(JSON.stringify({ v: 3, learned: state.learned, stars: state.stars, best: state.best, free: state.free })); },
       get totalScore() { return totalScore(); },
-      get arcadeOn() { return arcadeOn; },
+      get screen() { return screen; },
+      unlockAll() { LEVELS.forEach(l => { state.learned[l.id] = true; state.stars[l.id] = state.stars[l.id] || 1; }); refreshScreen(); },
     };
   }
 
+  document.body.classList.toggle('in-yt', IN_YT);
   makeSky();
   $$('[data-wick]').forEach(el => mountWick(el));
-  requestAnimationFrame(async () => {
+
+  let booted = false;
+  async function boot() {
+    if (booted) return;
+    booted = true;
     SDK.firstFrameReady();           // loading screen is on screen
-    await loadSave();                // cloud save MUST load before any save
-    startLoop();
+    await loadSave();                // cloud save MUST load before any save (timeout-guarded)
     show('title');
+    startLoop();
     SDK.gameReady();                 // title screen is interactive
-  });
+  }
+  // First frame via rAF; a timer backs it up in case rAF is throttled (hidden iframe).
+  requestAnimationFrame(boot);
+  setTimeout(boot, 250);
 })();

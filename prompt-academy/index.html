@@ -7,7 +7,6 @@
   <!-- YouTube Playables SDK: MUST load before any game code. -->
   <script src="https://www.youtube.com/game_api/v1"></script>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="arcade.css">
 </head>
 <body>
   <div id="sky" aria-hidden="true"></div>
@@ -26,15 +25,15 @@
       <div class="center-col">
         <div class="wick-slot big" data-wick data-mood="happy"></div>
         <h1 class="logo">Prompt<span>Academy</span></h1>
-        <p class="tagline">Learn to talk to AI by teaching Wick, a very literal little candle.</p>
+        <p class="tagline">Describe a picture so Wick, a very literal little candle, can paint it. Every word changes what you get!</p>
         <button class="btn primary" id="btn-play">Play</button>
-        <button class="btn ghost" id="btn-title-endless" hidden>∞ Endless</button>
+        <button class="btn ghost" id="btn-title-free" hidden>🎨 Free play</button>
         <button class="btn ghost" id="btn-notebook">My Notebook</button>
         <p class="byline">A Moonwick Apps game</p>
       </div>
     </section>
 
-    <!-- Map: 8 stages + Endless -->
+    <!-- Map: 8 stages + Free play -->
     <section id="screen-map" class="screen" aria-label="Map">
       <header class="topbar">
         <button class="icon-btn" data-back="title" aria-label="Back">‹</button>
@@ -43,9 +42,9 @@
       </header>
       <div class="scroll">
         <div id="map-path" class="map-path"></div>
-        <button class="endless-node locked" id="btn-endless" aria-disabled="true">
-          <span class="node-num">∞</span>
-          <span class="node-title">Endless<small id="endless-sub">Clear stage 8 to unlock</small></span>
+        <button class="free-node locked" id="btn-free" aria-disabled="true">
+          <span class="node-num">🎨</span>
+          <span class="node-title">Free play<small id="free-sub">Clear stage 8 to unlock</small></span>
         </button>
       </div>
     </section>
@@ -75,10 +74,47 @@
       </div>
     </section>
 
-    <!-- Arcade: Catch the Prompt -->
-    <section id="screen-arcade" class="screen" aria-label="Catch the Prompt">
-      <canvas id="arcade-canvas" aria-label="Arcade: move Wick left and right to catch good prompt blocks"></canvas>
-      <button class="icon-btn arcade-exit" id="arcade-exit" aria-label="Exit to map">‹</button>
+    <!-- Picture This: describe the target, Wick paints it -->
+    <section id="screen-picture" class="screen wide" aria-label="Picture">
+      <header class="topbar">
+        <button class="icon-btn" data-back="map" aria-label="Back to map">‹</button>
+        <h2 id="pic-title">Picture</h2>
+        <span class="pill" id="pic-pill">Paint 1</span>
+      </header>
+      <div class="scroll" id="pic-scroll">
+        <div id="pic-build" class="pic-build">
+          <figure class="frame target">
+            <figcaption><span>Describe this picture</span><small id="pic-step" hidden></small></figcaption>
+            <div class="canvas-box" id="pic-target-box"></div>
+          </figure>
+          <div class="builder">
+            <div class="prompt-preview">
+              <div class="prompt-head"><span>Your prompt to Wick</span>
+                <span><button class="link-btn" data-pact="step1" id="btn-step-back" hidden>‹ Step 1</button><button class="link-btn" data-pact="clear">Clear</button></span></div>
+              <p id="pic-sentence" class="sentence empty" aria-live="polite"></p>
+            </div>
+            <div class="tabs" id="pic-tabs" role="tablist" aria-label="Prompt parts"></div>
+            <p class="tab-hint" id="pic-hint"></p>
+            <div class="chips" id="pic-chips"></div>
+            <button class="btn primary send" id="btn-generate" data-pact="generate">Paint it, Wick! 🖌</button>
+          </div>
+        </div>
+
+        <div id="pic-result" class="pic-result" hidden>
+          <div class="match-row">
+            <div class="chat"><div class="wick-slot" id="res-wick"></div><div class="bubble" id="res-bubble" aria-live="polite"></div></div>
+            <div class="match"><b id="res-pct">0%</b><span>match</span><div class="big-stars" id="res-stars"></div></div>
+          </div>
+          <div class="pair">
+            <figure class="frame"><figcaption><span>Target</span></figcaption><div class="canvas-box" id="res-target"></div></figure>
+            <figure class="frame"><figcaption><span>Wick’s painting</span></figcaption><div class="canvas-box" id="res-result"></div></figure>
+          </div>
+          <p class="res-prompt" id="res-prompt"></p>
+          <ol class="notes" id="res-notes"></ol>
+          <p class="guess-line" id="res-guess"></p>
+          <div class="modal-actions" id="res-actions"></div>
+        </div>
+      </div>
     </section>
 
     <!-- Notebook -->
@@ -106,6 +142,11 @@
     </div>
   </div>
 
+  <!-- Pause: an overlay on top of the game (never hides it). -->
+  <div id="pause-overlay" class="pause-overlay" hidden>
+    <div class="pause-card"><b>Paused</b><span class="pause-tap">Tap to continue</span></div>
+  </div>
+
   <!-- Modal (lesson intro / Wick's answer) -->
   <div id="modal" class="modal" aria-hidden="true">
     <div class="modal-panel" role="dialog" aria-modal="true">
@@ -114,9 +155,10 @@
   </div>
 
   <script src="levels.js"></script>
-  <script src="content.js"></script>
   <script src="art.js"></script>
-  <script src="arcade.js"></script>
+  <script src="scene.js"></script>
+  <script src="picture-levels.js"></script>
+  <script src="picture.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
