@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Moonwick Software – GhostTab for Chrome</title>
-<meta name="description" content="Moonwick Software makes small, private productivity tools for Chrome. GhostTab automatically closes tabs you stopped using, including Incognito tabs.">
+<title>Moonwick Software – GhostTab and GhostLock for Chrome</title>
+<meta name="description" content="Moonwick Software makes small, private tools for Chrome. GhostTab closes tabs you stopped using. GhostLock locks any tab behind a PIN, or makes it look like an ordinary page.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="site"><div class="wrap">
   <a class="logo" href="./">Moonwick Software</a>
-  <nav><a href="#ghosttab">GhostTab</a><a href="#pricing">Pricing</a><a href="#contact">Contact</a></nav>
+  <nav><a href="#ghosttab">GhostTab</a><a href="#ghostlock">GhostLock</a><a href="#pricing">Pricing</a><a href="#contact">Contact</a></nav>
 </div></header>
 
 <div class="hero" id="ghosttab"><div class="wrap">
@@ -33,11 +33,41 @@
   </div>
 </div></section>
 
-<section id="pricing" style="padding-top:0"><div class="wrap">
+<div class="hero" id="ghostlock"><div class="wrap">
+  <svg class="hero-icon" width="128" height="128" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="g2" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#8B88F5"/><stop offset="1" stop-color="#4A44C6"/></linearGradient></defs><path fill="url(#g2)" d="M8 104V34Q8 4 38 4H90Q120 4 120 34V104A14 14 0 0 1 92 104A14 14 0 0 1 64 104A14 14 0 0 1 36 104A14 14 0 0 1 8 104Z"/><circle cx="64" cy="48" r="16" fill="#fff"/><path d="M56 58H72L77 90H51Z" fill="#fff"/></svg>
+  <div>
+    <div class="badge">GhostLock for Chrome</div>
+    <h1>Lock any tab. Or make it look unlocked.</h1>
+    <p>GhostLock hides a tab behind a PIN in one click. With Stealth lock, the tab turns into an ordinary page, so nobody can tell anything is hidden. Your PIN is never stored.</p>
+    <span class="status">Coming to the Chrome Web Store, January 2027</span>
+  </div>
+</div></div>
+
+<section><div class="wrap">
+  <h2>What GhostLock does</h2>
+  <div class="grid four">
+    <div class="card"><h3>One-click lock</h3><p>Lock the tab you're on from the toolbar, a right-click or Alt+Shift+L. One PIN opens every locked tab.</p></div>
+    <div class="card"><h3>Stealth lock</h3><p>The locked tab becomes Google or a site you choose. No lock screen, no Back button back to the page.</p></div>
+    <div class="card"><h3>Your PIN stays yours</h3><p>GhostLock never stores your PIN, and locked addresses are encrypted on your computer. No account, no server.</p></div>
+    <div class="card"><h3>Incognito that locks itself</h3><p>Private tabs can lock after a few minutes without use, or the moment your screen locks.</p></div>
+    <div class="card"><h3>Decoy PIN</h3><p>Type your PIN backwards and the tab opens a harmless site instead, while the real page stays hidden.</p></div>
+    <div class="card"><h3>Touch ID</h3><p>Unlock with your fingerprint on a Mac. Your PIN always works too.</p></div>
+    <div class="card"><h3>Auto-lock and auto-close</h3><p>Lock or close tabs you stopped using, and always lock chosen sites like email or banking when you switch away.</p></div>
+    <div class="card"><h3>Lock all, unlock all</h3><p>Hide every tab at once before you hand over your laptop or share your screen.</p></div>
+  </div>
+</div></section>
+
+<section id="pricing"><div class="wrap">
   <h2>Pricing</h2>
+  <h3>GhostTab</h3>
   <div class="grid">
     <div class="card"><h3>Free</h3><div class="price">$0</div><p>Every feature, including Incognito tab closing, with timeouts from 5 minutes to 8 hours.</p></div>
     <div class="card"><h3>Premium</h3><div class="price">$9.99</div><p>One-time purchase. Unlocks short timers of 1 to 4 minutes. Pay once, no subscription. Bought inside the extension; payments are processed securely by Stripe through ExtensionPay.</p></div>
+  </div>
+  <h3 style="margin-top:32px">GhostLock</h3>
+  <div class="grid">
+    <div class="card"><h3>Free</h3><div class="price">$0</div><p>Lock screen, one PIN for all tabs, one-time PINs, keyboard shortcuts and Unlock all. Unlocking is always free.</p></div>
+    <div class="card"><h3>Pro</h3><div class="price">$1<span class="muted" style="font-size:18px;font-weight:600">/month</span></div><p>Or $9 a year. Stealth lock, decoy PIN, Touch ID, auto-lock, auto-close, lock all and always-lock sites. Try it free for 14 days, no card needed. Cancel anytime. Payments are processed securely by Stripe through ExtensionPay.</p></div>
   </div>
 </div></section>
 
@@ -47,7 +77,7 @@
 </div></section>
 
 <footer><div class="wrap">
-  <a href="ghosttab/privacy.html">GhostTab privacy policy</a><a href="terms.html">Terms &amp; refunds</a>
+  <a href="ghosttab/privacy.html">GhostTab privacy policy</a><a href="ghostlock/privacy.html">GhostLock privacy policy</a><a href="terms.html">Terms &amp; refunds</a>
   <div style="margin-top:10px">© 2026 Moonwick Software</div>
 </div></footer>
 </body>

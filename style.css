@@ -45,3 +45,8 @@ footer a { color: var(--muted); margin-right: 18px; }
   nav a { margin-left: 12px; font-size: 14px; }
   .logo { font-size: 17px; white-space: nowrap; }
 }
+@media (max-width: 640px) {
+  header.site .wrap { height: auto; min-height: 64px; flex-wrap: wrap; gap: 4px 16px; padding-top: 10px; padding-bottom: 10px; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  nav a { margin-left: 0; }
+}
