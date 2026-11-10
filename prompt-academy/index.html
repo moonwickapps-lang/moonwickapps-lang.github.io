@@ -7,6 +7,7 @@
   <!-- YouTube Playables SDK: MUST load before any game code. -->
   <script src="https://www.youtube.com/game_api/v1"></script>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="arcade.css">
 </head>
 <body>
   <div id="sky" aria-hidden="true"></div>
@@ -27,27 +28,32 @@
         <h1 class="logo">Prompt<span>Academy</span></h1>
         <p class="tagline">Learn to talk to AI by teaching Wick, a very literal little candle.</p>
         <button class="btn primary" id="btn-play">Play</button>
+        <button class="btn ghost" id="btn-title-endless" hidden>∞ Endless</button>
         <button class="btn ghost" id="btn-notebook">My Notebook</button>
         <p class="byline">A Moonwick Apps game</p>
       </div>
     </section>
 
-    <!-- Lesson select -->
-    <section id="screen-levels" class="screen" aria-label="Lessons">
+    <!-- Map: 8 stages + Endless -->
+    <section id="screen-map" class="screen" aria-label="Map">
       <header class="topbar">
         <button class="icon-btn" data-back="title" aria-label="Back">‹</button>
-        <h2>Lessons</h2>
+        <h2>Prompt Academy</h2>
         <span class="pill" id="total-stars">★ 0</span>
       </header>
       <div class="scroll">
-        <div id="level-grid" class="level-grid"></div>
+        <div id="map-path" class="map-path"></div>
+        <button class="endless-node locked" id="btn-endless" aria-disabled="true">
+          <span class="node-num">∞</span>
+          <span class="node-title">Endless<small id="endless-sub">Clear stage 8 to unlock</small></span>
+        </button>
       </div>
     </section>
 
     <!-- Play -->
     <section id="screen-play" class="screen" aria-label="Lesson">
       <header class="topbar">
-        <button class="icon-btn" data-back="levels" aria-label="Back to lessons">‹</button>
+        <button class="icon-btn" data-back="map" aria-label="Back to map">‹</button>
         <h2 id="play-title">Lesson</h2>
         <span class="pill" id="play-try">Try 1</span>
       </header>
@@ -67,6 +73,12 @@
 
         <button class="btn primary send" id="btn-send" disabled>Send to Wick ➤</button>
       </div>
+    </section>
+
+    <!-- Arcade: Catch the Prompt -->
+    <section id="screen-arcade" class="screen" aria-label="Catch the Prompt">
+      <canvas id="arcade-canvas" aria-label="Arcade: move Wick left and right to catch good prompt blocks"></canvas>
+      <button class="icon-btn arcade-exit" id="arcade-exit" aria-label="Exit to map">‹</button>
     </section>
 
     <!-- Notebook -->
@@ -102,6 +114,9 @@
   </div>
 
   <script src="levels.js"></script>
+  <script src="content.js"></script>
+  <script src="art.js"></script>
+  <script src="arcade.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

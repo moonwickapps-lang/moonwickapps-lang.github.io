@@ -1,0 +1,26 @@
+/* Prompt Academy v2 — layout-only CSS for the arcade screen (engineer-owned).
+ * Look & feel lives in style.css (designer-owned). */
+#screen-arcade {
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+#arcade-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;          /* drag anywhere moves Wick; no scroll / zoom */
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Exit button sits at the top-left corner of the centred playfield (max 520px). */
+.arcade-exit {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  left: calc(var(--pf-left, calc(50% - min(50%, 260px))) + 6px);
+}
+body.in-arcade #sky { display: none; }  /* the canvas draws its own sky */
+.map-node .node-replay { cursor: pointer; }
