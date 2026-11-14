@@ -26,6 +26,8 @@ nav a:hover { color: var(--fg); }
 .badge { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; }
 .status { display: inline-block; margin-top: 22px; padding: 6px 14px; border-radius: 999px;
   background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 15px; }
+a.status { text-decoration: none; }
+a.status:hover { filter: brightness(1.08); }
 section { padding: 56px 0; }
 h2 { font-size: 28px; margin: 0 0 20px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
